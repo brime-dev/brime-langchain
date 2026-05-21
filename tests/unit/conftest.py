@@ -1,7 +1,8 @@
 """Shared fixtures: monkeypatch Brime/AsyncBrime clients with stubs."""
+
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import Any
 
 import pytest
 
@@ -13,13 +14,17 @@ class FakeSearchResult:
         self.max_results = max_results
         self.answer = f"answer for {query}"
         self.results = [
-            type("R", (), {
-                "title": f"Result {i}",
-                "url": f"https://r{i}.example.com",
-                "content": f"content {i}",
-                "score": 1.0 - i * 0.1,
-                "published_date": None,
-            })()
+            type(
+                "R",
+                (),
+                {
+                    "title": f"Result {i}",
+                    "url": f"https://r{i}.example.com",
+                    "content": f"content {i}",
+                    "score": 1.0 - i * 0.1,
+                    "published_date": None,
+                },
+            )()
             for i in range(min(max_results, 3))
         ]
         self.request_id = "req_test"
@@ -28,23 +33,41 @@ class FakeSearchResult:
 
 
 class FakeExtractResult:
-    def __init__(self, urls: List[str]) -> None:
+    def __init__(self, urls: list[str]) -> None:
         ok = urls[: max(0, len(urls) - 1)] if len(urls) > 1 else urls
-        bad = urls[len(ok):]
+        bad = urls[len(ok) :]
         self.results = [
-            type("E", (), {
-                "url": u, "markdown": f"# {u}\nbody", "method": "worker_static",
-                "content_type": "html", "status": 200, "latency_ms": 100,
-            })()
+            type(
+                "E",
+                (),
+                {
+                    "url": u,
+                    "markdown": f"# {u}\nbody",
+                    "method": "worker_static",
+                    "content_type": "html",
+                    "status": 200,
+                    "latency_ms": 100,
+                },
+            )()
             for u in ok
         ]
         self.failed = [
-            type("F", (), {
-                "url": u,
-                "error": type("Err", (), {
-                    "code": "fetch_failed", "message": "404", "needs_browser": False,
-                })(),
-            })()
+            type(
+                "F",
+                (),
+                {
+                    "url": u,
+                    "error": type(
+                        "Err",
+                        (),
+                        {
+                            "code": "fetch_failed",
+                            "message": "404",
+                            "needs_browser": False,
+                        },
+                    )(),
+                },
+            )()
             for u in bad
         ]
         self.request_id = "req"
@@ -57,9 +80,19 @@ class FakeResearchBasic:
         self.query = query
         self.answer = f"basic answer for {query}"
         self.sources = [
-            type("S", (), {"title": "Src", "url": "https://src.example.com", "content": "c", "score": 0.9, "published_date": None})()
+            type(
+                "S",
+                (),
+                {
+                    "title": "Src",
+                    "url": "https://src.example.com",
+                    "content": "c",
+                    "score": 0.9,
+                    "published_date": None,
+                },
+            )()
         ]
-        self.steps: List[Any] = []
+        self.steps: list[Any] = []
         self.request_id = "req"
         self.credits_used = 2
         self.latency_ms = 100
@@ -79,7 +112,7 @@ class FakeResearchStatus:
         self.answer = f"deep answer for {query}"
         self.sources_count = 12
         self.steps_count = 3
-        self.error: Optional[Any] = None
+        self.error: Any | None = None
         self.credits_used = 5
 
 
@@ -125,5 +158,5 @@ class FakeAsyncClient:
 
 @pytest.fixture(autouse=True)
 def _stub_brime_clients(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("langchain_brime._client.Brime", FakeSyncClient)
-    monkeypatch.setattr("langchain_brime._client.AsyncBrime", FakeAsyncClient)
+    monkeypatch.setattr("langchain_brime._utilities.Brime", FakeSyncClient)
+    monkeypatch.setattr("langchain_brime._utilities.AsyncBrime", FakeAsyncClient)

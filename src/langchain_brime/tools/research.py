@@ -2,40 +2,63 @@
 
 from __future__ import annotations
 
-from typing import Any, List, Literal, Optional, Type
+from typing import Any, Literal, cast
 
-from langchain_core.callbacks import (
-    AsyncCallbackManagerForToolRun,
-    CallbackManagerForToolRun,
-)
-from langchain_core.tools import BaseTool
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
-
+from brime.async_client import AsyncBrime
+from brime.client import Brime
+from brime.errors import BrimeError
 from brime.models.research import (
     ResearchBasicResponse,
     ResearchStatusResponse,
 )
-from langchain_brime._client import _ClientHolder
+from langchain_core.callbacks import (
+    AsyncCallbackManagerForToolRun,
+    CallbackManagerForToolRun,
+)
+from langchain_core.tools import BaseTool, ToolException
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, SecretStr, model_validator
+
+from langchain_brime._errors import brime_to_tool_exception
+from langchain_brime._utilities import (
+    build_async_client,
+    build_sync_client,
+    resolve_brime_api_key,
+)
 
 
 class BrimeResearchInput(BaseModel):
     """Schema exposed to the LLM for the brime_research tool."""
 
-    query: str = Field(..., description="Natural-language research question.")
+    query: str = Field(
+        ...,
+        description=(
+            "Natural-language research question. Be specific — the research "
+            "agent expands this into multiple sub-queries on its own, so a "
+            "well-scoped prompt yields a tighter synthesis.\n\n"
+            "Good: 'Compare BM25 vs dense retrieval for short-document search'.\n"
+            "Bad: 'tell me about search'."
+        ),
+    )
     depth: Literal["basic", "deep"] = Field(
         "basic",
         description=(
-            "'basic' = single-shot agent loop (~10-30s, 1-3 rounds). "
-            "'deep' = multi-step iterative research (60-600s, up to 8 rounds). "
-            "Pick 'deep' only when the user asks for detailed synthesis "
-            "across multiple sources."
+            "'basic' — single-shot agent loop (~10-30s, 1-3 rounds). Good "
+            "default. Returns synthesised answer + cited sources.\n"
+            "'deep' — multi-step iterative research (1-10 min, up to 8 "
+            "rounds). Higher quality but slow and costly. Pick this only "
+            "when the user explicitly asks for thorough multi-source "
+            "synthesis."
         ),
     )
-    max_rounds: Optional[int] = Field(
+    max_rounds: int | None = Field(
         None,
         ge=1,
         le=8,
-        description="Tool-call rounds. basic 1-3, deep 1-8.",
+        description=(
+            "Override the round budget. basic accepts 1-3, deep accepts "
+            "1-8. Leave None to use the server-side default for the chosen "
+            "depth."
+        ),
     )
 
 
@@ -54,72 +77,98 @@ class BrimeResearch(BaseTool):
         "research in 1-10 minutes. Use 'deep' only when the question "
         "warrants thorough multi-source synthesis."
     )
-    args_schema: Type[BaseModel] = BrimeResearchInput
+    args_schema: type[BaseModel] = BrimeResearchInput  # type: ignore[assignment,unused-ignore]
+    handle_tool_error: bool = True  # type: ignore[assignment,unused-ignore]
 
-    api_key: Optional[str] = None
-    base_url: Optional[str] = None
+    api_key: SecretStr | None = Field(default=None, exclude=True)
+    base_url: str | None = None
     timeout: float = 60.0
     deep_poll_timeout: float = 420.0
     deep_poll_interval: float = 8.0
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    _holder: Optional[_ClientHolder] = PrivateAttr(default=None)
+    _sync_client: Brime | None = PrivateAttr(default=None)
+    _async_client: AsyncBrime | None = PrivateAttr(default=None)
 
-    def _client(self) -> _ClientHolder:
-        if self._holder is None:
-            self._holder = _ClientHolder(
-                api_key=self.api_key, base_url=self.base_url, timeout=self.timeout
-            )
-        return self._holder
+    @model_validator(mode="before")
+    @classmethod
+    def _resolve_api_key(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            return resolve_brime_api_key(cast("dict[str, Any]", values))
+        return values
+
+    def _get_sync(self) -> Brime:
+        if self._sync_client is None:
+            self._sync_client = build_sync_client(self.api_key, self.base_url, self.timeout)
+        return self._sync_client
+
+    def _get_async(self) -> AsyncBrime:
+        if self._async_client is None:
+            self._async_client = build_async_client(self.api_key, self.base_url, self.timeout)
+        return self._async_client
 
     def _run(
         self,
         query: str,
         depth: Literal["basic", "deep"] = "basic",
-        max_rounds: Optional[int] = None,
-        run_manager: Optional[CallbackManagerForToolRun] = None,
-        **kwargs: Any,
+        max_rounds: int | None = None,
+        run_manager: CallbackManagerForToolRun | None = None,
+        **_: Any,
     ) -> str:
-        c = self._client().sync
-        if depth == "basic":
-            res = c.research(query, depth="basic", max_rounds=max_rounds)
-            return _format_basic(res)  # type: ignore[arg-type]
-        res = c.research(
-            query,
-            depth="deep",
-            max_rounds=max_rounds,
-            wait=True,
-            poll_interval=self.deep_poll_interval,
-            poll_timeout=self.deep_poll_timeout,
-        )
-        return _format_deep(res)  # type: ignore[arg-type]
+        c = self._get_sync()
+        try:
+            if depth == "basic":
+                res_basic = c.research(query, depth="basic", max_rounds=max_rounds)
+                return _format_basic(res_basic)  # type: ignore[arg-type]
+            res_deep = c.research(
+                query,
+                depth="deep",
+                max_rounds=max_rounds,
+                wait=True,
+                poll_interval=self.deep_poll_interval,
+                poll_timeout=self.deep_poll_timeout,
+            )
+        except BrimeError as exc:
+            raise brime_to_tool_exception(exc) from exc
+        except ToolException:
+            raise
+        except Exception as exc:  # pragma: no cover
+            raise ToolException(f"Unexpected Brime error: {exc}") from exc
+        return _format_deep(res_deep)  # type: ignore[arg-type]
 
     async def _arun(
         self,
         query: str,
         depth: Literal["basic", "deep"] = "basic",
-        max_rounds: Optional[int] = None,
-        run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
-        **kwargs: Any,
+        max_rounds: int | None = None,
+        run_manager: AsyncCallbackManagerForToolRun | None = None,
+        **_: Any,
     ) -> str:
-        c = self._client().async_
-        if depth == "basic":
-            res = await c.research(query, depth="basic", max_rounds=max_rounds)
-            return _format_basic(res)  # type: ignore[arg-type]
-        res = await c.research(
-            query,
-            depth="deep",
-            max_rounds=max_rounds,
-            wait=True,
-            poll_interval=self.deep_poll_interval,
-            poll_timeout=self.deep_poll_timeout,
-        )
-        return _format_deep(res)  # type: ignore[arg-type]
+        c = self._get_async()
+        try:
+            if depth == "basic":
+                res_basic = await c.research(query, depth="basic", max_rounds=max_rounds)
+                return _format_basic(res_basic)  # type: ignore[arg-type]
+            res_deep = await c.research(
+                query,
+                depth="deep",
+                max_rounds=max_rounds,
+                wait=True,
+                poll_interval=self.deep_poll_interval,
+                poll_timeout=self.deep_poll_timeout,
+            )
+        except BrimeError as exc:
+            raise brime_to_tool_exception(exc) from exc
+        except ToolException:
+            raise
+        except Exception as exc:  # pragma: no cover
+            raise ToolException(f"Unexpected Brime error: {exc}") from exc
+        return _format_deep(res_deep)  # type: ignore[arg-type]
 
 
 def _format_basic(res: ResearchBasicResponse) -> str:
-    lines: List[str] = []
+    lines: list[str] = []
     lines.append((res.answer or "(no answer)").strip())
     lines.append("")
     lines.append("Sources:")
@@ -132,7 +181,7 @@ def _format_deep(res: ResearchStatusResponse) -> str:
     if res.status != "complete":
         err = res.error.message if res.error else res.status
         return f"Research did not complete (status={res.status}): {err}"
-    lines: List[str] = []
+    lines: list[str] = []
     lines.append((res.answer or "(no answer)").strip())
     lines.append("")
     lines.append(
@@ -142,4 +191,4 @@ def _format_deep(res: ResearchStatusResponse) -> str:
     return "\n".join(lines)
 
 
-__all__: List[str] = ["BrimeResearch", "BrimeResearchInput"]
+__all__: list[str] = ["BrimeResearch", "BrimeResearchInput"]

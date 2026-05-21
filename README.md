@@ -1,12 +1,19 @@
 # langchain-brime
 
-**LangChain meets the live web.** Drop the [Brime API](https://brime.dev) into any LangChain agent, chain, or RAG pipeline — as four typed tools and a retriever you can plug in unchanged.
+[![PyPI](https://img.shields.io/pypi/v/langchain-brime.svg)](https://pypi.org/project/langchain-brime/)
+[![Python](https://img.shields.io/pypi/pyversions/langchain-brime.svg)](https://pypi.org/project/langchain-brime/)
+[![Typed](https://img.shields.io/badge/typed-py.typed-blue.svg)](https://peps.python.org/pep-0561/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+[Brime API](https://brime.dev) · [Docs](https://docs.brime.dev) · [LangChain guide](https://docs.brime.dev/sdks/langchain) · [Python SDK](https://pypi.org/project/brime/) · [Issues](https://github.com/brime-dev/brime-langchain/issues)
+
+**LangChain meets the live web.** Drop the Brime API into any LangChain agent, chain, or RAG pipeline — as three typed tools and a retriever you can plug in unchanged.
 
 ```bash
 pip install langchain-brime
 ```
 
-Python 3.9+. Sync and async. Fully typed (`py.typed`). Passes the official LangChain `ToolsUnitTests` compliance suite.
+Python 3.9+. Sync and async. Fully typed (`py.typed`). `SecretStr` API keys. Actionable agent errors via `handle_tool_error`. Passes the official LangChain `ToolsUnitTests` compliance suite.
 
 ## What you get
 
@@ -142,8 +149,8 @@ Single tuned multi-round flow (~30–90 s) with cited synthesis.
 ## Compatibility
 
 - Python 3.9+
-- `langchain-core` 0.3 – 1.x
-- Backed by [`brime`](https://pypi.org/project/brime/) Python SDK ≥ 0.1.0
+- `langchain-core` ≥ 1.4, < 2.0
+- Backed by [`brime`](https://pypi.org/project/brime/) Python SDK ≥ 0.2.0 (retry, request_id, typed error hierarchy)
 
 ## Links
 

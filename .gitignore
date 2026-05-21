@@ -11,3 +11,6 @@ venv/
 .coverage
 htmlcov/
 *.egg
+.pyright_cache/
+.tox/
+uv.lock.bak
