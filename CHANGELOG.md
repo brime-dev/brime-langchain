@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 — 2026-05-21
+
+### Fixed
+- `BrimeRetriever` now slices `res.results[:k]` client-side. The server
+  occasionally returns more than `max_results` items (depth='basic' SERP
+  expansion); the LangChain `k` contract was being violated. Live e2e
+  confirmed retriever now returns exactly `k` documents.
+
 ## 0.2.0 — 2026-05-21
 
 A-tier polish. No breaking API changes for normal use, but `api_key` is now

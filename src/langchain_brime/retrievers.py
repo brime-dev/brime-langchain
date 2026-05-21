@@ -82,7 +82,8 @@ class BrimeRetriever(BaseRetriever):
             exclude_domains=self.exclude_domains,
             include_answer=self.include_answer,
         )
-        return [_to_document(r) for r in res.results]
+        k = max(1, min(self.k, 20))
+        return [_to_document(r) for r in res.results[:k]]
 
     async def _aget_relevant_documents(
         self,
@@ -101,7 +102,8 @@ class BrimeRetriever(BaseRetriever):
             exclude_domains=self.exclude_domains,
             include_answer=self.include_answer,
         )
-        return [_to_document(r) for r in res.results]
+        k = max(1, min(self.k, 20))
+        return [_to_document(r) for r in res.results[:k]]
 
 
 def _to_document(r: SearchResultItem) -> Document:
