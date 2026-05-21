@@ -107,12 +107,19 @@ class BrimeRetriever(BaseRetriever):
 
 
 def _to_document(r: SearchResultItem) -> Document:
+    # Brime SERP results occasionally have empty ``content``; fall back to
+    # ``title`` so the Document carries at least some signal for downstream
+    # RAG / reranking. The original snippet (possibly empty) stays available
+    # via ``metadata['content']`` for callers that need to distinguish.
+    content = r.content.strip() if r.content else ""
+    page_content = content or r.title
     return Document(
         id=r.url,
-        page_content=r.content,
+        page_content=page_content,
         metadata={
             "url": r.url,
             "title": r.title,
+            "content": r.content,
             "score": r.score,
             "published_date": r.published_date,
             "source": "brime",

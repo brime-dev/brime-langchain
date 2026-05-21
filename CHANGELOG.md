@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.2 — 2026-05-21
+
+### Fixed
+- `BrimeRetriever` falls back to `result.title` for `page_content` when the
+  Brime API returns an empty `content` string (observed in basic + advanced
+  SERP depths). The empty snippet stays available via `metadata['content']`
+  for callers that want to distinguish. Without this, RAG chains were
+  receiving `Document(page_content="")` and producing no signal downstream.
+
 ## 0.2.1 — 2026-05-21
 
 ### Fixed
